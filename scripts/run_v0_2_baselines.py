@@ -13,7 +13,11 @@ from actionguardbench.baselines import (
     OperationMajorityBaseline,
 )
 from actionguardbench.models import BenchmarkCase, Decision
-from actionguardbench.reporting import compact_metrics, evaluate_cases
+from actionguardbench.reporting import (
+    cluster_bootstrap_confidence_intervals,
+    compact_metrics,
+    evaluate_cases,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -51,13 +55,26 @@ def build_baselines(train_cases: list[BenchmarkCase]) -> dict[str, Any]:
 
 
 def run_split(
-    cases: list[BenchmarkCase], baselines: dict[str, Any], split: str
+    cases: list[BenchmarkCase],
+    baselines: dict[str, Any],
+    split: str,
+    *,
+    bootstrap_iterations: int = 0,
 ) -> dict[str, dict]:
     split_cases = [case for case in cases if case.split == split]
-    return {
-        name: evaluate_cases(split_cases, baseline.predict(split_cases))
-        for name, baseline in baselines.items()
-    }
+    results = {}
+    for name, baseline in baselines.items():
+        predictions = baseline.predict(split_cases)
+        result = evaluate_cases(split_cases, predictions)
+        if bootstrap_iterations > 0:
+            result["confidence_intervals"] = cluster_bootstrap_confidence_intervals(
+                split_cases,
+                predictions,
+                iterations=bootstrap_iterations,
+                seed=0,
+            )
+        results[name] = result
+    return results
 
 
 def print_table(results: dict[str, dict[str, dict]]) -> None:
@@ -67,18 +84,19 @@ def print_table(results: dict[str, dict[str, dict]]) -> None:
         "severe_false_allow",
         "unnecessary_block",
         "confirmation_miss",
+        "counterfactual_triplet_accuracy",
     )
     print(
-        "| split | baseline | accuracy | macro F1 | BLOCK→ALLOW | ALLOW→BLOCK | ASK→ALLOW |"
+        "| split | baseline | accuracy | macro F1 | BLOCK→ALLOW | ALLOW→BLOCK | ASK→ALLOW | triplet exact |"
     )
-    print("|---|---|---:|---:|---:|---:|---:|")
+    print("|---|---|---:|---:|---:|---:|---:|---:|")
     for split, split_results in results.items():
         for name, result in split_results.items():
             values = compact_metrics(result)
             rendered = [f"{values[column]:.3f}" for column in columns]
             print(
                 f"| {split} | {name} | {rendered[0]} | {rendered[1]} | "
-                f"{rendered[2]} | {rendered[3]} | {rendered[4]} |"
+                f"{rendered[2]} | {rendered[3]} | {rendered[4]} | {rendered[5]} |"
             )
 
 
@@ -89,6 +107,12 @@ def main() -> None:
         choices=("dev", "test", "both"),
         default="both",
         help="Evaluation split. Training labels are used only to fit training-derived baselines.",
+    )
+    parser.add_argument(
+        "--bootstrap-iterations",
+        type=int,
+        default=0,
+        help="Optional family-cluster bootstrap iterations for confidence intervals.",
     )
     parser.add_argument(
         "--output",
@@ -103,7 +127,15 @@ def main() -> None:
     baselines = build_baselines(train_cases)
 
     splits = ("dev", "test") if args.split == "both" else (args.split,)
-    results = {split: run_split(cases, baselines, split) for split in splits}
+    results = {
+        split: run_split(
+            cases,
+            baselines,
+            split,
+            bootstrap_iterations=args.bootstrap_iterations,
+        )
+        for split in splits
+    }
 
     print_table(results)
 
