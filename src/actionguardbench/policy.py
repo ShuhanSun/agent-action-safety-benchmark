@@ -26,7 +26,7 @@ class BaselinePolicy:
             return Decision.BLOCK
 
         # Obvious indirect-injection / exfiltration marker used only in synthetic v0.1.
-        if case.source_trust == "untrusted" and "attacker.invalid" in args_text:
+        if case.source_trust == "untrusted" and "untrusted.example" in args_text:
             return Decision.BLOCK
 
         # Untrusted content should not trigger high-impact state changes.
@@ -43,7 +43,7 @@ class BaselinePolicy:
 
         if operation == "run_shell":
             command = str(args.get("command", "")).lower()
-            if "rm -rf" in command or "delete" in command:
+            if "destructive_workspace_operation_placeholder" in command or "delete" in command:
                 return Decision.BLOCK
             return Decision.ASK
 
