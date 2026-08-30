@@ -32,7 +32,7 @@ jobs:
         run: python -m unittest discover -s tests -v
 
       - name: Validate v0.2 generation
-        run: python scripts/generate_v0_2.py --validate-only
+        run: python scripts/generate_v0_2.py --output /tmp/cases_v0.2.jsonl
 
       - name: Run non-LLM baselines
         run: python scripts/run_v0_2_baselines.py --split both --output /tmp/v0.2-baselines.json
