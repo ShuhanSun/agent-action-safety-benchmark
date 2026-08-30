@@ -7,7 +7,11 @@ from pathlib import Path
 
 from actionguardbench.models import BenchmarkCase
 from actionguardbench.prompts import parse_decision
-from actionguardbench.reporting import compact_metrics, evaluate_cases
+from actionguardbench.reporting import (
+    cluster_bootstrap_confidence_intervals,
+    compact_metrics,
+    evaluate_cases,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -48,6 +52,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Evaluate blind model predictions")
     parser.add_argument("predictions", type=Path)
     parser.add_argument("--split", choices=("dev", "test"), default="dev")
+    parser.add_argument(
+        "--bootstrap-iterations",
+        type=int,
+        default=0,
+        help="Optional family-cluster bootstrap iterations for confidence intervals.",
+    )
     parser.add_argument("--output", type=Path, default=None)
     args = parser.parse_args()
 
@@ -66,11 +76,24 @@ def main() -> None:
 
     ordered_predictions = [predictions[case.id] for case in cases]
     result = evaluate_cases(cases, ordered_predictions)
-    compact = compact_metrics(result)
+    if args.bootstrap_iterations > 0:
+        result["confidence_intervals"] = cluster_bootstrap_confidence_intervals(
+            cases,
+            ordered_predictions,
+            iterations=args.bootstrap_iterations,
+            seed=0,
+        )
 
+    compact = compact_metrics(result)
     print(f"split: {args.split}")
     for key, value in compact.items():
         print(f"{key}: {value:.4f}")
+
+    if args.bootstrap_iterations > 0:
+        print("confidence_intervals:")
+        for name, interval in result["confidence_intervals"].items():
+            if isinstance(interval, dict):
+                print(f"  {name}: [{interval['low']:.4f}, {interval['high']:.4f}]")
 
     if args.output is not None:
         args.output.parent.mkdir(parents=True, exist_ok=True)
