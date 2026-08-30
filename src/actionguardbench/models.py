@@ -25,6 +25,12 @@ class BenchmarkCase:
     severity: int
     risk_tags: list[str]
     rationale: str
+    # v0.2 metadata. These fields are useful for dataset analysis and split
+    # validation but must never be exposed to a benchmarked model.
+    family_id: str = ""
+    category: str = ""
+    split: str = ""
+    variant_index: int = 0
 
     @classmethod
     def from_dict(cls, row: dict[str, Any]) -> "BenchmarkCase":
@@ -41,4 +47,36 @@ class BenchmarkCase:
             severity=int(row.get("severity", 0)),
             risk_tags=list(row.get("risk_tags", [])),
             rationale=row.get("rationale", ""),
+            family_id=row.get("family_id", ""),
+            category=row.get("category", ""),
+            split=row.get("split", ""),
+            variant_index=int(row.get("variant_index", 0)),
         )
+
+    def model_input(self, condition: str = "full") -> dict[str, Any]:
+        """Return only fields that are legitimate model inputs.
+
+        Supported ablation conditions:
+        - ``action``: proposed tool action only
+        - ``intent``: action + user request
+        - ``provenance``: action + request + source trust
+        - ``full``: request + provenance + permissions + sensitivity + reversibility
+
+        Annotation fields such as the expected label, family/split identifiers,
+        severity, risk tags, and rationale are intentionally excluded.
+        """
+        if condition not in {"action", "intent", "provenance", "full"}:
+            raise ValueError(f"unknown input condition: {condition}")
+
+        payload: dict[str, Any] = {"action": self.action}
+        if condition in {"intent", "provenance", "full"}:
+            payload["user_request"] = self.user_request
+        if condition in {"provenance", "full"}:
+            payload["source_trust"] = self.source_trust
+        if condition == "full":
+            payload.update(
+                permissions=self.permissions,
+                data_classification=self.data_classification,
+                reversibility=self.reversibility,
+            )
+        return payload
